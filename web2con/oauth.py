@@ -1,4 +1,4 @@
-from twitter.auth import Auth
+from .auth import Auth
 
 from time import time
 from random import getrandbits

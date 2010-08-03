@@ -12,7 +12,7 @@ class Auth(object):
         if required by the authentication scheme in use."""
         raise NotImplementedError()
 
-    def generate_headers(self):
+    def generate_headers(self, base_url, method, params):
         """Generates headers which should be added to the request if required
         by the authentication scheme in use."""
         raise NotImplementedError()
@@ -28,5 +28,5 @@ class NoAuth(Auth):
     def encode_params(self, base_url, method, params):
         return urllib.urlencode(params)
 
-    def generate_headers(self):
+    def generate_headers(self, base_url, method, params):
         return {}

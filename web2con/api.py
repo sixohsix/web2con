@@ -25,17 +25,17 @@ class HttpError(Error):
     Exception thrown by the Web2Connector object when there is an HTTP
     error interacting with the API.
     """
-    def __init__(self, e, uri, format, uriparts):
+    def __init__(self, e, uri, suffix, uriparts):
       self.e = e
       self.uri = uri
-      self.format = format
+      self.suffix = suffix
       self.uriparts = uriparts
 
     def __str__(self):
         return (
             "Received status %i for URL: %s.%s using parameters: "
             "(%s)\ndetails: %s" %(
-                self.e.code, self.uri, self.format, self.uriparts,
+                self.e.code, self.uri, self.suffix, self.uriparts,
                 self.e.fp.read()))
 
 class Response(object):
@@ -135,10 +135,11 @@ class Call(object):
 
         headers = {}
         if self.auth:
-            headers.update(self.auth.generate_headers())
+            headers.update(self.auth.generate_headers(uriBase, method, kwargs))
             arg_data = self.auth.encode_params(uriBase, method, kwargs)
             if method == 'GET':
-                uriBase += '?' + arg_data
+                if arg_data:
+                    uriBase += '?' + arg_data
                 body = None
             else:
                 body = arg_data
@@ -149,6 +150,7 @@ class Call(object):
             stream = urllib2.urlopen(req)
             return self.response_handler(stream)
         except urllib2.HTTPError, e:
+            import pdb; pdb.set_trace() # --miv DEBUG
             if (e.code == 304):
                 return []
             else:
@@ -170,6 +172,6 @@ class Web2Connector(Call):
                       suffix)
 
 
-__all__ = ["Twitter", "Error", "HttpError",
+__all__ = ["Web2Connector", "Error", "HttpError",
            "JsonListResponse", "JsonDictResponse",
-           "StrResponse"]
+           "StrResponse", "handle_json", "handle_str"]
