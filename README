@@ -1,0 +1,3 @@
+This is a universal Web API connector in Python. It's intended to be the
+successor to Python Twitter Tools. At this point it's highly unstable
+and you shouldn't use it.
