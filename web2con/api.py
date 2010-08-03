@@ -2,7 +2,6 @@ import urllib2
 
 from exceptions import Exception
 
-#from .twitter_globals import POST_ACTIONS
 from .auth import NoAuth
 
 def _py26OrGreater():
@@ -58,20 +57,20 @@ class Response(object):
 # talk.
 class JsonListResponse(Response, list):
     __doc__ = """JSON Response
-    """ + TwitterResponse.__doc__
+    """ + Response.__doc__
     def __init__(self, lst, headers):
-        TwitterResponse.__init__(self, headers)
+        Response.__init__(self, headers)
         list.__init__(self, lst)
 class JsonDictResponse(Response, dict):
     __doc__ = """JSON Response
-    """ + TwitterResponse.__doc__
+    """ + Response.__doc__
     def __init__(self, d, headers):
-        TwitterResponse.__init__(self, headers)
+        Response.__init__(self, headers)
         dict.__init__(self, d)
 
-class XmlResponse(Response, str):
-    __doc__ = """Twitter XML Response
-    """ + TwitterResponse.__doc__
+class StrResponse(Response, str):
+    __doc__ = """String Response
+    """ + Response.__doc__
 
 
 def handle_json(stream):
@@ -107,7 +106,7 @@ class Call(object):
                 auth=self.auth, response_handler=self.response_handler,
                 domain=self.domain,
                 uriparts=self.uriparts + (k,),
-                protocol=self.protocol
+                protocol=self.protocol,
                 suffix=self.suffix)
 
     def __call__(self, **kwargs):
@@ -120,10 +119,10 @@ class Call(object):
         uri = u'/'.join(uriparts)
 
         method = "GET"
-        for action in POST_ACTIONS:
-            if uri.endswith(action):
-                method = "POST"
-                break
+        #for action in POST_ACTIONS:
+        #    if uri.endswith(action):
+        #        method = "POST"
+        #        break
 
         # If an id kwarg is present and there is no id to fill in in
         # the list of uriparts, assume the id goes at the end.
@@ -131,8 +130,8 @@ class Call(object):
         if id:
             uri += "/%s" %(id)
 
-        uriBase = "%s://%s/%s%s%s" %(
-            self.protocol, self.domain, uri, dot, self.suffix)
+        uriBase = "%s://%s/%s%s" %(
+            self.protocol, self.domain, uri, self.suffix)
 
         headers = {}
         if self.auth:
@@ -165,10 +164,12 @@ class Web2Connector(Call):
             auth = NoAuth()
         if not response_handler:
             response_handler = handle_str
+        if not uriparts:
+            uriparts = ()
         Call.__init__(self, auth, response_handler, domain, uriparts, protocol,
                       suffix)
 
 
 __all__ = ["Twitter", "Error", "HttpError",
            "JsonListResponse", "JsonDictResponse",
-           "XmlResponse"]
+           "StrResponse"]
