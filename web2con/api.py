@@ -2,8 +2,8 @@ import urllib2
 
 from exceptions import Exception
 
-from twitter.twitter_globals import POST_ACTIONS
-from twitter.auth import NoAuth
+#from .twitter_globals import POST_ACTIONS
+from .auth import NoAuth
 
 def _py26OrGreater():
     import sys
@@ -56,44 +56,59 @@ class Response(object):
 # Multiple inheritance makes my inner Java nerd cry. Why can't I just
 # add arbitrary attributes to list or str objects?! Guido, we need to
 # talk.
-class JsonListResponse(TwitterResponse, list):
-    __doc__ = """Twitter JSON Response
+class JsonListResponse(Response, list):
+    __doc__ = """JSON Response
     """ + TwitterResponse.__doc__
     def __init__(self, lst, headers):
         TwitterResponse.__init__(self, headers)
         list.__init__(self, lst)
-class JsonDictResponse(TwitterResponse, dict):
-    __doc__ = """Twitter JSON Response
+class JsonDictResponse(Response, dict):
+    __doc__ = """JSON Response
     """ + TwitterResponse.__doc__
     def __init__(self, d, headers):
         TwitterResponse.__init__(self, headers)
         dict.__init__(self, d)
 
-class XmlResponse(TwitterResponse, str):
+class XmlResponse(Response, str):
     __doc__ = """Twitter XML Response
     """ + TwitterResponse.__doc__
 
 
+def handle_json(stream):
+    res = json.loads(stream.read())
+    response_cls = (
+        JsonListResponse if type(res) is list
+        else JsonDictResponse)
+    return response_cls(res, stream.headers)
+
+
+def handle_str(stream):
+    r = StrResponse(stream.read())
+    r.headers = stream.headers
+    return r
+
+
 class Call(object):
     def __init__(
-        self, auth, format, domain, uri="", agent=None,
-        uriparts=None, secure=True):
+        self, auth, response_handler, domain,
+        uriparts, protocol, suffix):
         self.auth = auth
-        self.format = format
+        self.response_handler = response_handler
         self.domain = domain
-        self.uri = uri
-        self.agent = agent
         self.uriparts = uriparts
-        self.secure = secure
+        self.protocol = protocol
+        self.suffix = suffix
 
     def __getattr__(self, k):
         try:
             return object.__getattr__(self, k)
         except AttributeError:
             return Call(
-                auth=self.auth, format=self.format, domain=self.domain,
-                agent=self.agent, uriparts=self.uriparts + (k,),
-                secure=self.secure)
+                auth=self.auth, response_handler=self.response_handler,
+                domain=self.domain,
+                uriparts=self.uriparts + (k,),
+                protocol=self.protocol
+                suffix=self.suffix)
 
     def __call__(self, **kwargs):
         # Build the uri.
@@ -116,14 +131,8 @@ class Call(object):
         if id:
             uri += "/%s" %(id)
 
-        secure_str = ''
-        if self.secure:
-            secure_str = 's'
-        dot = ""
-        if self.format:
-            dot = "."
-        uriBase = "http%s://%s/%s%s%s" %(
-                    secure_str, self.domain, uri, dot, self.format)
+        uriBase = "%s://%s/%s%s%s" %(
+            self.protocol, self.domain, uri, dot, self.suffix)
 
         headers = {}
         if self.auth:
@@ -138,140 +147,26 @@ class Call(object):
         req = urllib2.Request(uriBase, body, headers)
 
         try:
-            handle = urllib2.urlopen(req)
-            if "json" == self.format:
-                res = json.loads(handle.read())
-                response_cls = (
-                    TwitterJsonListResponse if type(res) is list
-                    else TwitterJsonDictResponse)
-                return response_cls(res, handle.headers)
-            else:
-                r = TwitterXmlResponse(handle.read())
-                r.headers = handle.headers
-                return r
+            stream = urllib2.urlopen(req)
+            return self.response_handler(stream)
         except urllib2.HTTPError, e:
             if (e.code == 304):
                 return []
             else:
-                raise HttpError(e, uri, self.format, arg_data)
+                raise HttpError(e, uri, self.suffix, arg_data)
 
-class Twitter(Call):
+class Web2Connector(Call):
     """
-    The minimalist yet fully featured Twitter API class.
-
-    Get RESTful data by accessing members of this class. The result
-    is decoded python objects (lists and dicts).
-
-    The Twitter API is documented here:
-
-      http://dev.twitter.com/doc
-
-
-    Examples::
-
-      twitter = Twitter(
-          auth=OAuth(token, token_key, con_secret, con_secret_key)))
-
-      # Get the public timeline
-      twitter.statuses.public_timeline()
-
-      # Get a particular friend's timeline
-      twitter.statuses.friends_timeline(id="billybob")
-
-      # Also supported (but totally weird)
-      twitter.statuses.friends_timeline.billybob()
-
-      # Send a direct message
-      twitter.direct_messages.new(
-          user="billybob",
-          text="I think yer swell!")
-
-      # Get the members of a particular list of a particular friend
-      twitter.user.listname.members(user="billybob", listname="billysbuds")
-
-
-    Searching Twitter::
-
-      twitter_search = Twitter(domain="search.twitter.com")
-
-      # Find the latest search trends
-      twitter_search.trends()
-
-      # Search for the latest News on #gaza
-      twitter_search.search(q="#gaza")
-
-
-    Using the data returned
-    -----------------------
-
-    Twitter API calls return decoded JSON. This is converted into
-    a bunch of Python lists, dicts, ints, and strings. For example::
-
-      x = twitter.statuses.public_timeline()
-
-      # The first 'tweet' in the timeline
-      x[0]
-
-      # The screen name of the user who wrote the first 'tweet'
-      x[0]['user']['screen_name']
-
-
-    Getting raw XML data
-    --------------------
-
-    If you prefer to get your Twitter data in XML format, pass
-    format="xml" to the Twitter object when you instantiate it::
-
-      twitter = Twitter(format="xml")
-
-      The output will not be parsed in any way. It will be a raw string
-      of XML.
-
+    The base of all Web API calls.
     """
-    def __init__(
-        self, format="json",
-        domain="twitter.com", secure=True, auth=None,
-        api_version=''):
-        """
-        Create a new twitter API connector.
-
-        Pass an `auth` parameter to use the credentials of a specific
-        user. Generally you'll want to pass an `OAuth`
-        instance::
-
-            twitter = Twitter(auth=OAuth(
-                    token, token_secret, consumer_key, consumer_secret))
-
-
-        `domain` lets you change the domain you are connecting. By
-        default it's twitter.com but `search.twitter.com` may be
-        useful too.
-
-        If `secure` is False you will connect with HTTP instead of
-        HTTPS.
-
-        The value of `agent` is sent in the `X-Twitter-Client`
-        header. This is deprecated. Instead Twitter determines the
-        application using the OAuth Client Key and Client Key Secret
-        parameters.
-
-        `api_version` is used to set the base uri. By default it's
-        nothing, but if you set it to '1' your URI will start with
-        '1/'.
-        """
+    def __init__(self, domain, auth=None, response_handler=None, uriparts=None,
+                 protocol='http', suffix=""):
         if not auth:
             auth = NoAuth()
-
-        if (format not in ("json", "xml", "")):
-            raise ValueError("Unknown data format '%s'" %(format))
-
-        uriparts = ()
-        if api_version:
-            uriparts += (str(api_version),)
-
-        TwitterCall.__init__(
-            self, auth=auth, format=format, domain=domain,
-            secure=secure, uriparts=uriparts)
+        if not response_handler:
+            response_handler = handle_str
+        Call.__init__(self, auth, response_handler, domain, uriparts, protocol,
+                      suffix)
 
 
 __all__ = ["Twitter", "Error", "HttpError",
