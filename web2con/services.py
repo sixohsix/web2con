@@ -16,5 +16,6 @@ class TwitterXml(Web2Connector):
 class Soundcloud(Web2Connector):
     def __init__(self):
         Web2Connector.__init__(
-            self, domain="api.soundcloud.com", suffix=".json",
-            response_handler=handle_json)
+            self, domain="api.soundcloud.com",
+            response_handler=handle_json,
+            headers=dict(Accept="application/json"))

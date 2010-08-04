@@ -86,28 +86,27 @@ def handle_str(stream):
     r.headers = stream.headers
     return r
 
-
-class Call(object):
+class Descriptor(object):
     def __init__(
         self, auth, response_handler, domain,
-        uriparts, protocol, suffix):
+        protocol, suffix, headers):
         self.auth = auth
         self.response_handler = response_handler
         self.domain = domain
-        self.uriparts = uriparts
         self.protocol = protocol
         self.suffix = suffix
+        self.headers = headers
+
+class Call(object):
+    def __init__(self, descriptor, uriparts):
+        self.d = descriptor
+        self.uriparts = uriparts
 
     def __getattr__(self, k):
         try:
             return object.__getattr__(self, k)
         except AttributeError:
-            return Call(
-                auth=self.auth, response_handler=self.response_handler,
-                domain=self.domain,
-                uriparts=self.uriparts + (k,),
-                protocol=self.protocol,
-                suffix=self.suffix)
+            return Call(self.d, self.uriparts + (k,))
 
     def __call__(self, **kwargs):
         # Build the uri.
@@ -131,12 +130,12 @@ class Call(object):
             uri += "/%s" %(id)
 
         uriBase = "%s://%s/%s%s" %(
-            self.protocol, self.domain, uri, self.suffix)
+            self.d.protocol, self.d.domain, uri, self.d.suffix)
 
-        headers = {}
-        if self.auth:
-            headers.update(self.auth.generate_headers(uriBase, method, kwargs))
-            arg_data = self.auth.encode_params(uriBase, method, kwargs)
+        headers = dict(self.d.headers)
+        if self.d.auth:
+            headers.update(self.d.auth.generate_headers(uriBase, method, kwargs))
+            arg_data = self.d.auth.encode_params(uriBase, method, kwargs)
             if method == 'GET':
                 if arg_data:
                     uriBase += '?' + arg_data
@@ -148,28 +147,32 @@ class Call(object):
 
         try:
             stream = urllib2.urlopen(req)
-            return self.response_handler(stream)
+            return self.d.response_handler(stream)
         except urllib2.HTTPError, e:
-            import pdb; pdb.set_trace() # --miv DEBUG
             if (e.code == 304):
                 return []
             else:
-                raise HttpError(e, uri, self.suffix, arg_data)
+                raise HttpError(e, uri, self.d.suffix, arg_data)
 
 class Web2Connector(Call):
     """
     The base of all Web API calls.
     """
     def __init__(self, domain, auth=None, response_handler=None, uriparts=None,
-                 protocol='http', suffix=""):
+                 protocol='http', suffix="", headers=None):
         if not auth:
             auth = NoAuth()
         if not response_handler:
             response_handler = handle_str
         if not uriparts:
             uriparts = ()
-        Call.__init__(self, auth, response_handler, domain, uriparts, protocol,
-                      suffix)
+        if not headers:
+            headers = {}
+        Call.__init__(
+            self, Descriptor(
+                auth, response_handler, domain, protocol,
+                suffix, headers),
+            uriparts)
 
 
 __all__ = ["Web2Connector", "Error", "HttpError",
